@@ -53,6 +53,18 @@ wget https://github.com/r-seize/FileGen/releases/download/v0.1.0/python3-filegen
 sudo dpkg -i python3-filegen_0.1.0-1_all.deb
 ```
 
+## Usage
+
+```bash
+    filegen <file.md>                    Create files from Markdown
+    filegen --chatgpt                    Create files from ChatGPT response (paste content after '--chatgpt')
+    filegen <file.md> -o <dir>           Create in specific directory
+    filegen <file.md> --preview          Preview without creating
+    filegen <file.md> --force            Overwrite existing files
+    filegen --help                       Show this help
+    filegen --version                    Show version
+```
+
 ## Uninstallation
 
 ### Linux/macOS
