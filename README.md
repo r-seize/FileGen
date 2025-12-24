@@ -11,7 +11,7 @@
 
 **Simple file generator from Markdown**
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/VOTRE-USERNAME/filegen/releases)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/VOTRE-USERNAME/filegen/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-GPL-orange.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)]()
@@ -35,13 +35,13 @@ if you encounter an externally-managed-environment error, it means your system P
 ```bash
 python3 -m venv ~/filegen-venv
 source ~/filegen-venv/bin/activate
-pip install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.0.tar.gz
+pip install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.1.tar.gz
 ```
 
 ### 2. Using pip directly from the release archive
 
 ```bash
-pip3 install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.0.tar.gz
+pip3 install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.1.tar.gz
 ```
 
 Same note as above regarding externally-managed-environment. Using a virtual environment is recommended if installing on system Python.
@@ -49,8 +49,8 @@ Same note as above regarding externally-managed-environment. Using a virtual env
 ### 3. On Ubuntu/Debian using the .deb package
 
 ```bash
-wget https://github.com/r-seize/FileGen/releases/download/v0.1.0/python3-filegen_0.1.0-1_all.deb
-sudo dpkg -i python3-filegen_0.1.0-1_all.deb
+wget https://github.com/r-seize/FileGen/releases/download/v0.1.1/python3-filegen_0.1.1-1_all.deb
+sudo dpkg -i python3-filegen_0.1.1-1_all.deb
 ```
 
 ## Usage

@@ -10,7 +10,7 @@ from src.generator.file_generator import FileGenerator
 from src.validator.validator import StructureValidator
 from src.utils.exceptions import FileGenError, ParsingError, ValidationError, GenerationError
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def print_tree_preview(structure: list) -> None:
@@ -110,7 +110,7 @@ def chatgpt_mode():
 
 def print_help():
     help_text = """
-FileGen v0.1.0 - File generator from Markdown
+FileGen v0.1.1 - File generator from Markdown
 
 Usage:
     filegen <file.md>                    Create files from Markdown
