@@ -6,11 +6,12 @@ from pathlib import Path
 
 from src.parser.markdown_parser import MarkdownParser
 from src.parser.chatgpt_parser import ChatGPTParser
+from src.parser.structure_parser import StructureParser
 from src.generator.file_generator import FileGenerator
 from src.validator.validator import StructureValidator
 from src.utils.exceptions import FileGenError, ParsingError, ValidationError, GenerationError
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 
 def print_tree_preview(structure: list) -> None:
@@ -36,6 +37,76 @@ def print_tree_preview(structure: list) -> None:
                 print_tree_recursive(children, prefix + extension, is_last_item)
 
     print_tree_recursive(tree)
+
+
+def raw_structure_mode():
+    """Mode for parsing raw tree structures"""
+    print("[INFO] Raw structure mode - Paste your tree structure below")
+    print("[INFO] Press Ctrl+D (Linux/Mac) or Ctrl+Z (Windows) when done")
+    print("=" * 60)
+
+    lines = []
+    try:
+        while True:
+            line = input()
+            lines.append(line)
+    except EOFError:
+        pass
+
+    content = '\n'.join(lines)
+
+    if not content.strip():
+        print("[ERROR] No content provided")
+        return 1
+
+    print("\n" + "=" * 60)
+    print("[INFO] Parsing tree structure...")
+
+    try:
+        parser      = StructureParser()
+        structure   = parser.parse(content)
+
+        if not structure:
+            print("[ERROR] No files found in the structure")
+            return 1
+
+        print(f"[INFO] Found {len(structure)} elements")
+
+        validator   = StructureValidator()
+        output_dir  = Path.cwd()
+        result      = validator.validate(structure, output_dir)
+
+        if not result.is_valid:
+            print("[ERROR] Validation failed:")
+            for error in result.errors:
+                print(f"  - {error}")
+            return 1
+
+        print_tree_preview(structure)
+
+        response = input("\nCreate these files? [y/N] ")
+        if response.lower() not in ['y', 'yes']:
+            print("[INFO] Cancelled")
+            return 0
+
+        print("\n[INFO] Creating files...")
+        generator   = FileGenerator(output_dir=output_dir, force=False)
+        stats       = generator.generate(structure)
+
+        print(f"\n[OK] Created {stats['directories_created']} directories")
+        print(f"[OK] Created {stats['files_created']} files")
+
+        if stats['errors']:
+            print(f"[ERROR] {len(stats['errors'])} errors occurred")
+            for error in stats['errors']:
+                print(f"  - {error}")
+
+        print(f"\n[INFO] Output: {output_dir.resolve()}")
+        return 0
+
+    except Exception as e:
+        print(f"[ERROR] {e}")
+        return 1
 
 
 def chatgpt_mode():
@@ -110,11 +181,12 @@ def chatgpt_mode():
 
 def print_help():
     help_text = """
-FileGen v0.1.1 - File generator from Markdown
+FileGen v0.1.2 - File generator from Markdown and raw structures
 
 Usage:
     filegen <file.md>                    Create files from Markdown
-    filegen --chatgpt                    Create files from ChatGPT response (paste content)
+    filegen --chatgpt                    Create files from ChatGPT response
+    filegen --raw                        Create files from raw tree structure
     filegen <file.md> -o <dir>           Create in specific directory
     filegen <file.md> --preview          Preview without creating
     filegen <file.md> --force            Overwrite existing files
@@ -126,6 +198,16 @@ Examples:
     filegen structure.md -o my-project
     filegen structure.md --preview
     filegen --chatgpt
+    filegen --raw
+
+Raw Structure Mode:
+    Paste a tree structure like:
+    
+    project/
+    ├── src/
+    │   ├── main.py
+    │   └── utils.py
+    └── README.md
 """
     print(help_text)
 
@@ -136,6 +218,8 @@ def main():
     if not args:
         print("[ERROR] No file specified")
         print("Usage: filegen <file.md>")
+        print("       filegen --chatgpt")
+        print("       filegen --raw")
         print("Help: filegen --help")
         return 1
 
@@ -149,6 +233,9 @@ def main():
 
     if args[0] in ['--chatgpt', '--gpt', '-g']:
         return chatgpt_mode()
+
+    if args[0] in ['--raw', '--tree', '-r']:
+        return raw_structure_mode()
 
     md_file         = Path(args[0])
     output_dir      = Path.cwd()
