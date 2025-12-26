@@ -11,44 +11,73 @@ from src.generator.file_generator import FileGenerator
 from src.validator.validator import StructureValidator
 from src.utils.exceptions import FileGenError, ParsingError, ValidationError, GenerationError
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 
 def print_tree_preview(structure: list) -> None:
+    """
+    Print structure in proper tree format with hierarchy
+    
+    Args:
+        structure: List of structure items
+    """
     print("\nStructure:")
 
+    dirs    = [item for item in structure if item['type'] == 'directory']
+    files   = [item for item in structure if item['type'] == 'file']
+
+    dirs.sort(key=lambda x: (x['path'].count('/'), x['path']))
+    files.sort(key=lambda x: (x['path'].count('/'), x['path']))
+
     tree = {}
-    for item in structure:
-        path_parts  = item['path'].split('/')
-        current     = tree
-        for i, part in enumerate(path_parts):
-            if part not in current:
-                current[part] = {}
-            current = current[part]
 
-    def print_tree_recursive(node: dict, prefix: str = "", is_last: bool = True):
-        items = list(node.items())
-        for i, (name, children) in enumerate(items):
-            is_last_item = i == len(items) - 1
-            connector = "└── " if is_last_item else "├── "
-            print(f"{prefix}{connector}{name}")
-            if children:
-                extension = "    " if is_last_item else "│   "
-                print_tree_recursive(children, prefix + extension, is_last_item)
+    for d in dirs:
+        parts   = d['path'].split('/')
+        parent  = '/'.join(parts[:-1]) if len(parts) > 1 else ''
 
-    print_tree_recursive(tree)
+        if parent not in tree:
+            tree[parent] = {'dirs': [], 'files': []}
+        tree[parent]['dirs'].append(d)
+
+    for f in files:
+        parent = f['directory'] if f['directory'] != '.' else ''
+
+        if parent not in tree:
+            tree[parent] = {'dirs': [], 'files': []}
+        tree[parent]['files'].append(f)
+
+    def print_level(path: str, prefix: str = ""):
+        if path not in tree:
+            return
+
+        items = tree[path]['dirs'] + tree[path]['files']
+
+        for i, item in enumerate(items):
+            is_last         = (i == len(items) - 1)
+            connector       = "└── " if is_last else "├── "
+
+            if item['type'] == 'directory':
+                print(f"{prefix}{connector}{item['name']}/")
+                extension = "    " if is_last else "│   "
+                print_level(item['path'], prefix + extension)
+            else:
+                print(f"{prefix}{connector}{item['name']}")
+
+    print_level('')
 
 
 def raw_structure_mode():
     """Mode for parsing raw tree structures"""
     print("[INFO] Raw structure mode - Paste your tree structure below")
-    print("[INFO] Press Ctrl+D (Linux/Mac) or Ctrl+Z (Windows) when done")
+    print("[INFO] Press Enter on empty line when done")
     print("=" * 60)
 
     lines = []
     try:
         while True:
             line = input()
+            if line.strip() == '':
+                break
             lines.append(line)
     except EOFError:
         pass
@@ -111,14 +140,18 @@ def raw_structure_mode():
 
 def chatgpt_mode():
     print("[INFO] ChatGPT mode - Paste your ChatGPT response below")
-    print("[INFO] Press Ctrl+D (Linux/Mac) or Ctrl+Z (Windows) when done")
+    print("[INFO] Press Enter on empty line when done")
     print("=" * 60)
 
     lines = []
+    
     try:
         while True:
             line = input()
+            if line.strip() == '':
+                break
             lines.append(line)
+                
     except EOFError:
         pass
 
@@ -181,7 +214,7 @@ def chatgpt_mode():
 
 def print_help():
     help_text = """
-FileGen v0.1.2 - File generator from Markdown and raw structures
+FileGen v0.1.3 - File generator from Markdown and raw structures
 
 Usage:
     filegen <file.md>                    Create files from Markdown

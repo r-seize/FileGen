@@ -12,6 +12,14 @@ from src.utils.exceptions import ParsingError
 class MarkdownParser:
     """Parse Markdown files to extract structure"""
 
+    EXTENSIONLESS_FILES = {
+        'LICENSE', 'LICENCE', 'README', 'CHANGELOG', 'CONTRIBUTING',
+        'AUTHORS', 'CREDITS', 'INSTALL', 'MANIFEST', 'NOTICE',
+        'Dockerfile', 'Makefile', 'Procfile', 'Rakefile',
+        'Gemfile', 'Podfile', 'Fastfile', 'Appfile',
+        'CODEOWNERS', 'Vagrantfile', 'Brewfile'
+    }
+
     def __init__(self):
         self.current_directory: Optional[str]   = None
         self.structure: List[Dict]              = []
@@ -57,8 +65,10 @@ class MarkdownParser:
                 level, title = self._parse_heading(line)
 
                 if level == 1:
-                    self.current_directory = title.strip()
-                    self._add_directory(self.current_directory)
+                    dir_name = title.strip()
+                    if dir_name:
+                        self.current_directory = dir_name
+                        self._add_directory(dir_name)
                 elif level == 2:
                     if not self.current_directory:
                         raise ParsingError(
@@ -137,7 +147,61 @@ class MarkdownParser:
 
     @staticmethod
     def _get_extension(file_name: str) -> str:
-        """Extract file extension"""
+        """
+        Extract file extension
+        Enhanced to handle dotfiles and extensionless files
+        """
+        if file_name.startswith('.'):
+            if file_name.count('.') > 1:
+                return file_name[1:]
+            elif file_name.count('.') == 1:
+                return file_name[1:]
+
         if '.' in file_name:
             return file_name.rsplit('.', 1)[1]
         return ''
+
+
+def print_tree_structure(structure: List[Dict]) -> None:
+    """
+    Print structure in tree format
+
+    Args:
+        structure: List of structure items
+    """
+    tree = {}
+    for item in structure:
+        if item['type'] == 'directory':
+            parent = '/'.join(item['path'].split('/')[:-1]) if '/' in item['path'] else ''
+            if parent not in tree:
+                tree[parent] = {'dirs': [], 'files': []}
+            tree[parent]['dirs'].append(item)
+        else:
+            parent = item['directory'] if item['directory'] != '.' else ''
+            if parent not in tree:
+                tree[parent] = {'dirs': [], 'files': []}
+            tree[parent]['files'].append(item)
+
+    def print_level(path: str, prefix: str = ""):
+        if path not in tree:
+            return
+
+        items = tree[path]['dirs'] + tree[path]['files']
+        for i, item in enumerate(items):
+            is_last_item    = (i == len(items) - 1)
+            connector       = "└── " if is_last_item else "├── "
+
+            if item['type'] == 'directory':
+                print(f"{prefix}{connector}{item['name']}/")
+                extension = "    " if is_last_item else "│   "
+                print_level(item['path'], prefix + extension)
+            else:
+                print(f"{prefix}{connector}{item['name']}")
+
+    if tree.get(''):
+        print_level('')
+    else:
+        root_dirs = [item for item in structure if item['type'] == 'directory' and '/' not in item['path']]
+        for root in root_dirs:
+            print(f"{root['name']}/")
+            print_level(root['path'], "")

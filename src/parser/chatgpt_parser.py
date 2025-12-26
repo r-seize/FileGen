@@ -440,9 +440,12 @@ class ChatGPTParser:
                 continue
 
             clean_line      = re.sub(r'^[\s│├└─]+', '', line)
-            indent          = len(line) - len(line.lstrip())
+            stripped        = line.lstrip()
+            indent          = len(line) - len(stripped)
             name            = clean_line.strip()
-    
+            if '#' in name:
+                name = name.split('#')[0].strip()
+
             if not name or len(name) > 100:
                 continue
 
@@ -465,12 +468,10 @@ class ChatGPTParser:
                 else:
                     current_path.append(name)
             else:
-                levels_up = (prev_indent - indent) // 2 + 1
-                if levels_up >= len(current_path):
-                    current_path = [name]
-                else:
-                    current_path = current_path[:-levels_up]
-                    current_path.append(name)
+                indent_diff     = prev_indent - indent
+                levels_up       = max(1, indent_diff // 4)
+                current_path    = current_path[:-levels_up] if levels_up < len(current_path) else []
+                current_path.append(name)
 
             if not is_dir:
                 file_path = '/'.join(current_path)
