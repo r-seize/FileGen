@@ -26,17 +26,17 @@ class StructureParser:
         '|', '+', '-', '`', '\'', '\\', '/', '~', '·', '•'
     }
 
-    INVALID_PATH_CHARS      = {'<', '>', '|', '*', '?', '"', '\0'}
-    MAX_PATH_LENGTH         = 250
-    MAX_FILENAME_LENGTH     = 255
-    MAX_DEPTH               = 100
+    INVALID_PATH_CHARS          = {'<', '>', '|', '*', '?', '"', '\0'}
+    MAX_PATH_LENGTH             = 250
+    MAX_FILENAME_LENGTH         = 255
+    MAX_DEPTH                   = 100
 
     def __init__(self):
-        self.seen_files     = set()
-        self.seen_dirs      = set()
-        self.warnings       = []
-        self.current_tree   = []
-        self.trees          = []
+        self.seen_files         = set()
+        self.seen_dirs          = set()
+        self.warnings           = []
+        self.current_tree       = []
+        self.trees              = []
 
     def parse(self, content: str) -> List[Dict]:
         """
@@ -51,10 +51,10 @@ class StructureParser:
         Raises:
             ParsingError: If parsing fails completely
         """
-        self.seen_files     = set()
-        self.seen_dirs      = set()
-        self.warnings       = []
-        self.trees          = []
+        self.seen_files         = set()
+        self.seen_dirs          = set()
+        self.warnings           = []
+        self.trees              = []
 
         if not content.strip():
             raise ParsingError("Content is empty")
@@ -66,8 +66,8 @@ class StructureParser:
             except Exception as e:
                 raise ParsingError(f"Unable to read file: {e}")
 
-        content     = self._deep_clean_content(content)
-        all_paths   = self._extract_all_trees(content)
+        content         = self._deep_clean_content(content)
+        all_paths       = self._extract_all_trees(content)
 
         if not all_paths:
             raise ParsingError("No valid structure found in content")
@@ -147,13 +147,12 @@ class StructureParser:
 
     def _extract_all_trees(self, content: str) -> List[Tuple[str, bool]]:
         """
-        Extract paths from content - handles multiple tree structures
+        Extract paths from content - handles multiple tree structures with accurate depth tracking
         """
-        all_paths               = []
-        lines                   = content.split('\n')
-        current_tree_stack      = []
-        last_indent             = -1
-        current_root            = None
+        all_paths           = []
+        lines               = content.split('\n')
+        path_stack          = []
+        depth_stack         = []
 
         i = 0
         while i < len(lines):
@@ -168,71 +167,55 @@ class StructureParser:
             if result is None:
                 continue
 
-            name, indent, is_dir, has_tree_chars = result
+            name, depth, is_dir, has_tree_chars = result
 
-            if indent == 0 and not has_tree_chars:
-                if current_tree_stack:
-                    current_tree_stack = []
-
-                current_root            = name
-                current_tree_stack      = [name]
-                last_indent             = 0
-
+            if depth == 0 and not has_tree_chars:
+                path_stack      = [name]
+                depth_stack     = [0]
                 all_paths.append((name, True))
                 continue
 
-            if current_root is None:
-                current_root            = name
-                current_tree_stack      = [name]
-                last_indent             = 0
+            if not path_stack:
+                path_stack      = [name]
+                depth_stack     = [0]
                 all_paths.append((name, True))
                 continue
 
-            if indent > last_indent:
-                current_tree_stack.append(name)
-            elif indent == last_indent:
-                if current_tree_stack:
-                    current_tree_stack[-1] = name
-                else:
-                    current_tree_stack.append(name)
-            else:
-                levels_up = self._smart_calculate_levels(last_indent, indent)
+            while depth_stack and depth <= depth_stack[-1]:
+                path_stack.pop()
+                depth_stack.pop()
 
-                if levels_up >= len(current_tree_stack):
-                    current_tree_stack = [name]
-                else:
-                    current_tree_stack = current_tree_stack[:-levels_up]
-                    current_tree_stack.append(name)
+            path_stack.append(name)
+            depth_stack.append(depth)
 
-            if current_tree_stack:
-                path = '/'.join(current_tree_stack)
+            full_path = '/'.join(path_stack)
 
-                if len(current_tree_stack) > self.MAX_DEPTH:
-                    self.warnings.append(f"Path too deep (>{self.MAX_DEPTH}): {path} - skipped")
-                    continue
+            if len(path_stack) > self.MAX_DEPTH:
+                self.warnings.append(f"Path too deep (>{self.MAX_DEPTH}): {full_path} - skipped")
+                path_stack.pop()
+                depth_stack.pop()
+                continue
 
-                if len(path) > self.MAX_PATH_LENGTH:
-                    self.warnings.append(f"Path too long (>{self.MAX_PATH_LENGTH}): {path} - skipped")
-                    continue
+            if len(full_path) > self.MAX_PATH_LENGTH:
+                self.warnings.append(f"Path too long (>{self.MAX_PATH_LENGTH}): {full_path} - skipped")
+                path_stack.pop()
+                depth_stack.pop()
+                continue
 
-                if (path, is_dir) not in all_paths:
-                    all_paths.append((path, is_dir))
-
-            last_indent = indent
+            if (full_path, is_dir) not in all_paths:
+                all_paths.append((full_path, is_dir))
 
         return all_paths
 
     def _smart_parse_line(self, line: str) -> Optional[Tuple[str, int, bool, bool]]:
         """
         Intelligently parse a line - handles various formats and misalignments
-        Returns: (name, indent, is_dir, has_tree_chars)
+        Returns: (name, depth, is_dir, has_tree_chars)
         """
-        original = line
-
         if not line.strip():
             return None
 
-        tree_prefix, content, indent, has_tree_chars = self._extract_tree_components(line)
+        tree_prefix, content, depth, has_tree_chars = self._extract_tree_components(line)
 
         if content is None:
             return None
@@ -255,13 +238,16 @@ class StructureParser:
         if not is_dir and not self._is_likely_file(name):
             is_dir = True
 
-        return name, indent, is_dir, has_tree_chars
+        return name, depth, is_dir, has_tree_chars
 
     def _extract_tree_components(self, line: str) -> Tuple[str, Optional[str], int, bool]:
         """
-        Extract tree drawing characters, content, and calculate indent level
-        Handles misaligned characters and various formats
-        Returns: (tree_prefix, content, indent, has_tree_chars)
+        Extract tree drawing characters, content, and calculate depth level
+        Returns: (tree_prefix, content, depth, has_tree_chars)
+        
+        Depth calculation strategy:
+        - Count vertical bars (│) which indicate parent levels
+        - Connectors (├ └) indicate current item depth
         """
         if not line:
             return '', None, 0, False
@@ -273,8 +259,8 @@ class StructureParser:
 
         for i, char in enumerate(stripped):
             if char in self.TREE_CHARS:
-                has_tree_chars      = True
-                tree_char_end       = i + 1
+                has_tree_chars = True
+                tree_char_end = i + 1
             elif char in ' \t' and has_tree_chars:
                 tree_char_end = i + 1
             else:
@@ -282,18 +268,22 @@ class StructureParser:
 
         tree_prefix     = stripped[:tree_char_end]
         content         = stripped[tree_char_end:].strip()
-        indent          = 0
+        depth           = 0
 
         if has_tree_chars:
-            indent_score = 0
-            indent_score += leading_spaces // 4
-            indent_score += tree_prefix.count('│')
-            indent_score += tree_prefix.count('|')
-            indent = max(1, indent_score) * 4
-        else:
-            indent = 0
+            vertical_bars = tree_prefix.count('│') + tree_prefix.count('|')
+            has_connector = any(char in tree_prefix for char in ['├', '└', '─'])
 
-        return tree_prefix, content, indent, has_tree_chars
+            if vertical_bars > 0:
+                depth = vertical_bars + (1 if has_connector else 0)
+            elif has_connector:
+                depth = 1
+            else:
+                depth = max(0, leading_spaces // 4)
+        else:
+            depth = 0
+
+        return tree_prefix, content, depth, has_tree_chars
 
     def _smart_calculate_levels(self, last_indent: int, current_indent: int) -> int:
         """
@@ -428,6 +418,7 @@ class StructureParser:
     def get_warnings(self) -> List[str]:
         """Get all parsing warnings"""
         return self.warnings
+
 
 def parse_raw_structure(content: str) -> Tuple[List[Dict], List[str]]:
     """
