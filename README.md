@@ -11,7 +11,7 @@
 
 **Simple file generator from Markdown**
 
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](https://github.com/VOTRE-USERNAME/filegen/releases)
+[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](https://github.com/VOTRE-USERNAME/filegen/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-GPL-orange.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)]()
@@ -24,50 +24,49 @@ FileGen is a versatile tool that automatically creates files from Markdown docum
 
 ## Installation
 
-### 1. Using the install script (Linux/macOS/Windows)
-
+### Method 1: pipx (Recommended)
 ```bash
-curl -sSL https://raw.githubusercontent.com/r-seize/FileGen/main/install.sh | bash
+# Install pipx if needed
+sudo apt install pipx  # Ubuntu/Debian
+# or: brew install pipx (macOS)
+
+pipx ensurepath
+pipx install git+https://github.com/r-seize/FileGen.git@v0.1.4
 ```
 
-if you encounter an externally-managed-environment error, it means your system Python is managed by the OS. Use a virtual environment or pipx to install safely:
-
+### Method 2: Ubuntu/Debian (.deb)
 ```bash
-python3 -m venv ~/filegen-venv
-source ~/filegen-venv/bin/activate
-pip install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.3.tar.gz
+wget https://github.com/r-seize/FileGen/releases/download/v0.1.4/python3-filegen_0.1.4-1_all.deb
+sudo dpkg -i python3-filegen_0.1.4-1_all.deb
 ```
 
-### 2. Using pip directly from the release archive
-
+### Method 3: Virtual Environment
 ```bash
-pip3 install https://github.com/r-seize/FileGen/archive/refs/tags/v0.1.3.tar.gz
+python3 -m venv ~/.filegen-venv
+source ~/.filegen-venv/bin/activate
+pip install git+https://github.com/r-seize/FileGen.git@v0.1.4
+
+# Add to PATH (Linux/macOS)
+ln -s ~/.filegen-venv/bin/filegen ~/.local/bin/filegen
 ```
 
-Same note as above regarding externally-managed-environment. Using a virtual environment is recommended if installing on system Python.
-
-### 3. On Ubuntu/Debian using the .deb package
-
-```bash
-wget https://github.com/r-seize/FileGen/releases/download/v0.1.3/python3-filegen_0.1.3-1_all.deb
-sudo dpkg -i python3-filegen_0.1.3-1_all.deb
-```
+> ⚠️ **PEP 668 Warning**: On modern systems, avoid `pip install` directly. Use **pipx** or a **virtual environment**.
 
 ## Usage
 ```bash
-filegen <file.md>                    Create files from Markdown
-filegen --chatgpt                    Create files from ChatGPT response (paste content)
-filegen --raw                        Create files from raw tree structure (paste content)
-filegen <file.md> -o <dir>           Create in specific directory
-filegen <file.md> --preview          Preview without creating
-filegen <file.md> --force            Overwrite existing files
-filegen --help                       Show this help
-filegen --version                    Show version
+filegen <file.md>              # Create files from Markdown
+filegen --chatgpt              # Create files from ChatGPT response
+filegen --raw [file.txt]       # Create files from raw tree structure
+filegen <file.md> -o <dir>     # Specify output directory
+filegen <file.md> --preview    # Preview without creating
+filegen <file.md> --force      # Overwrite existing files
+filegen --help                 # Show help
+filegen --version              # Show version
 ```
 
 ### Examples
 
-**From Markdown file:**
+**From Markdown:**
 ```bash
 filegen structure.md
 filegen structure.md -o my-project
@@ -77,19 +76,22 @@ filegen structure.md --preview
 **From ChatGPT response:**
 ```bash
 filegen --chatgpt
-# Then paste your ChatGPT response and press Ctrl+D (Linux/Mac) or Ctrl+Z (Windows)
+# Paste your ChatGPT response, then press Enter twice
 ```
 
 **From raw tree structure:**
 ```bash
+# Interactive mode
 filegen --raw
-# Then paste your tree structure:
+# Paste tree structure:
 # project/
 # ├── src/
-# │   ├── main.py
-# │   └── utils.py
+# │   └── main.py
 # └── README.md
-# Press Ctrl+D (Linux/Mac) or Ctrl+Z (Windows) when done
+# Press Enter twice when done
+
+# From file
+filegen --raw structure.txt
 ```
 
 ## Uninstallation
@@ -106,12 +108,6 @@ sudo rm -rf /usr/local/bin/filegen
 sudo rm -rf /usr/lib/python3/dist-packages/filegen*
 ```
 
-- If installed via `pip`:
-
-```bash
-pip3 uninstall filegen
-```
-
 - If installed via `pipx`:
 
 ```bash
@@ -125,12 +121,6 @@ rm -rf /path/to/filegen-venv
 ```
 
 ### Windows
-
-- If installed via `pip`:
-
-```bash
-pip uninstall filegen
-```
 
 - If installed via `pipx`:
 
@@ -160,7 +150,7 @@ rd /s /q C:\Users\<User>\AppData\Roaming\FileGen
 | CLI for quick file generation | ✅ Done |
 | Configurable templates | 🚧 Coming soon |
 | Support for multiple output formats | 🚧 Coming soon |
-| Automatic creation of files and folders from a ChatGPT conversation via an extension | 💡 Ideas |
+| Automatic creation of files and folders from a ChatGPT conversation via an extension | 🚧 Coming soon |
 
 
 ## About

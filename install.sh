@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.1.3"
+VERSION="0.1.4"
 REPO="r-seize/filegen"
 
 echo "[INFO] Installing FileGen v${VERSION}"

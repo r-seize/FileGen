@@ -3,7 +3,8 @@ Simple CLI interface for FileGen
 """
 import sys
 from pathlib import Path
-
+from typing import Optional
+import traceback
 from src.parser.markdown_parser import MarkdownParser
 from src.parser.chatgpt_parser import ChatGPTParser
 from src.parser.structure_parser import StructureParser
@@ -11,50 +12,50 @@ from src.generator.file_generator import FileGenerator
 from src.validator.validator import StructureValidator
 from src.utils.exceptions import FileGenError, ParsingError, ValidationError, GenerationError
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 
 def print_tree_preview(structure: list) -> None:
     """
-    Print structure in proper tree format with hierarchy
-    
+    Print structure in proper tree format with correct hierarchy
+
     Args:
-        structure: List of structure items
+        structure: List of structure items with 'path' and 'type'
     """
     print("\nStructure:")
 
-    dirs    = [item for item in structure if item['type'] == 'directory']
-    files   = [item for item in structure if item['type'] == 'file']
+    if not structure:
+        print("(empty)")
+        return
 
-    dirs.sort(key=lambda x: (x['path'].count('/'), x['path']))
-    files.sort(key=lambda x: (x['path'].count('/'), x['path']))
+    tree            = {}
+    all_paths       = set()
 
-    tree = {}
+    for item in structure:
+        path = item['path']
+        all_paths.add(path)
 
-    for d in dirs:
-        parts   = d['path'].split('/')
-        parent  = '/'.join(parts[:-1]) if len(parts) > 1 else ''
-
-        if parent not in tree:
-            tree[parent] = {'dirs': [], 'files': []}
-        tree[parent]['dirs'].append(d)
-
-    for f in files:
-        parent = f['directory'] if f['directory'] != '.' else ''
+        if '/' in path:
+            parent = '/'.join(path.split('/')[:-1])
+        else:
+            parent = ''
 
         if parent not in tree:
-            tree[parent] = {'dirs': [], 'files': []}
-        tree[parent]['files'].append(f)
+            tree[parent] = []
+        tree[parent].append(item)
 
-    def print_level(path: str, prefix: str = ""):
-        if path not in tree:
+    for parent in tree:
+        tree[parent].sort(key=lambda x: (x['type'] == 'file', x['name']))
+
+    def print_level(parent_path: str, prefix: str = ""):
+        if parent_path not in tree:
             return
 
-        items = tree[path]['dirs'] + tree[path]['files']
+        items = tree[parent_path]
 
         for i, item in enumerate(items):
-            is_last         = (i == len(items) - 1)
-            connector       = "└── " if is_last else "├── "
+            is_last     = (i == len(items) - 1)
+            connector   = "└── " if is_last else "├── "
 
             if item['type'] == 'directory':
                 print(f"{prefix}{connector}{item['name']}/")
@@ -66,23 +67,45 @@ def print_tree_preview(structure: list) -> None:
     print_level('')
 
 
-def raw_structure_mode():
+def raw_structure_mode(input_file: Optional[Path] = None):
     """Mode for parsing raw tree structures"""
-    print("[INFO] Raw structure mode - Paste your tree structure below")
-    print("[INFO] Press Enter on empty line when done")
-    print("=" * 60)
 
-    lines = []
-    try:
-        while True:
-            line = input()
-            if line.strip() == '':
-                break
-            lines.append(line)
-    except EOFError:
-        pass
+    if input_file:
+        try:
+            with open(input_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            print(f"[ERROR] Unable to read file: {e}")
+            return 1
+    else:
+        print("[INFO] Raw structure mode - Paste your tree structure below")
+        print("[INFO] Press Enter twice when done")
+        print("=" * 60)
 
-    content = '\n'.join(lines)
+        lines           = []
+        empty_count     = 0
+
+        try:
+            while True:
+                try:
+                    line = input()
+                except KeyboardInterrupt:
+                    print("\n[WARN] Interrupted")
+                    return 130
+
+                if not line.strip():
+                    empty_count += 1
+                    if empty_count >= 2:
+                        break
+                    lines.append(line)
+                else:
+                    empty_count = 0
+                    lines.append(line)
+
+        except EOFError:
+            pass
+
+        content = '\n'.join(lines)
 
     if not content.strip():
         print("[ERROR] No content provided")
@@ -100,6 +123,14 @@ def raw_structure_mode():
             return 1
 
         print(f"[INFO] Found {len(structure)} elements")
+
+        warnings = parser.get_warnings()
+        if warnings:
+            print(f"[WARN] {len(warnings)} warning(s):")
+            for warning in warnings[:5]:
+                print(f"  - {warning}")
+            if len(warnings) > 5:
+                print(f"  ... and {len(warnings) - 5} more")
 
         validator   = StructureValidator()
         output_dir  = Path.cwd()
@@ -135,22 +166,30 @@ def raw_structure_mode():
 
     except Exception as e:
         print(f"[ERROR] {e}")
+        traceback.print_exc()
         return 1
 
 
 def chatgpt_mode():
     print("[INFO] ChatGPT mode - Paste your ChatGPT response below")
-    print("[INFO] Press Enter on empty line when done")
+    print("[INFO] Press Enter twice when done")
     print("=" * 60)
 
-    lines = []
-    
+    lines           = []
+    empty_count     = 0
+
     try:
         while True:
             line = input()
-            if line.strip() == '':
-                break
-            lines.append(line)
+
+            if not line.strip():
+                empty_count += 1
+                if empty_count >= 2:
+                    break
+                lines.append(line)
+            else:
+                empty_count = 0
+                lines.append(line)
                 
     except EOFError:
         pass
@@ -214,12 +253,12 @@ def chatgpt_mode():
 
 def print_help():
     help_text = """
-FileGen v0.1.3 - File generator from Markdown and raw structures
+FileGen v0.1.4 - File generator from Markdown and raw structures
 
 Usage:
     filegen <file.md>                    Create files from Markdown
     filegen --chatgpt                    Create files from ChatGPT response
-    filegen --raw                        Create files from raw tree structure
+    filegen --raw [file.txt]             Create files from raw tree structure
     filegen <file.md> -o <dir>           Create in specific directory
     filegen <file.md> --preview          Preview without creating
     filegen <file.md> --force            Overwrite existing files
@@ -231,16 +270,21 @@ Examples:
     filegen structure.md -o my-project
     filegen structure.md --preview
     filegen --chatgpt
-    filegen --raw
+    filegen --raw                        # Interactive mode
+    filegen --raw structure.txt          # From file (RECOMMENDED)
 
 Raw Structure Mode:
-    Paste a tree structure like:
+    RECOMMENDED: Save your structure to a file first!
     
-    project/
+    echo "project/
     ├── src/
-    │   ├── main.py
-    │   └── utils.py
-    └── README.md
+    │   └── main.py
+    └── README.md" > structure.txt
+    
+    filegen --raw structure.txt
+    
+    Interactive mode (may have terminal issues with large structures):
+    filegen --raw
 """
     print(help_text)
 
@@ -268,7 +312,13 @@ def main():
         return chatgpt_mode()
 
     if args[0] in ['--raw', '--tree', '-r']:
-        return raw_structure_mode()
+        input_file = None
+        if len(args) > 1 and not args[1].startswith('-'):
+            input_file = Path(args[1])
+            if not input_file.exists():
+                print(f"[ERROR] File not found: {input_file}")
+                return 1
+        return raw_structure_mode(input_file)
 
     md_file         = Path(args[0])
     output_dir      = Path.cwd()

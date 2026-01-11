@@ -1,16 +1,17 @@
 """
-Structure parser
-Parse raw tree structures directly
+Structure parser - Ultra-robust version
+Parse raw tree structures with advanced error handling and flexibility
+Handles: multiple trees, misaligned characters, various formats, shell errors
 """
 import re
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 
 from src.utils.exceptions import ParsingError
 
 
 class StructureParser:
-    """Parse raw tree structure strings"""
+    """Parse raw tree structure strings with maximum flexibility and error recovery"""
 
     EXTENSIONLESS_FILES = {
         'LICENSE', 'LICENCE', 'README', 'CHANGELOG', 'CONTRIBUTING',
@@ -20,25 +21,40 @@ class StructureParser:
         'CODEOWNERS', 'Vagrantfile', 'Brewfile'
     }
 
+    TREE_CHARS = {
+        '│', '├', '└', '─', '┬', '┴', '┼', '┤', '┌', '┐', '╭', '╮', '╰', '╯',
+        '|', '+', '-', '`', '\'', '\\', '/', '~', '·', '•'
+    }
+
+    INVALID_PATH_CHARS      = {'<', '>', '|', '*', '?', '"', '\0'}
+    MAX_PATH_LENGTH         = 250
+    MAX_FILENAME_LENGTH     = 255
+    MAX_DEPTH               = 100
+
     def __init__(self):
-        self.seen_files = set()
-        self.seen_dirs = set()
+        self.seen_files     = set()
+        self.seen_dirs      = set()
+        self.warnings       = []
+        self.current_tree   = []
+        self.trees          = []
 
     def parse(self, content: str) -> List[Dict]:
         """
-        Parse raw tree structure
+        Parse raw tree structure with maximum flexibility
 
         Args:
-            content: Raw tree structure string
+            content: Raw tree structure string (can contain multiple trees)
 
         Returns:
             List of dictionaries representing the structure
 
         Raises:
-            ParsingError: If parsing fails
+            ParsingError: If parsing fails completely
         """
-        self.seen_files = set()
-        self.seen_dirs = set()
+        self.seen_files     = set()
+        self.seen_dirs      = set()
+        self.warnings       = []
+        self.trees          = []
 
         if not content.strip():
             raise ParsingError("Content is empty")
@@ -50,97 +66,313 @@ class StructureParser:
             except Exception as e:
                 raise ParsingError(f"Unable to read file: {e}")
 
-        paths = self._extract_from_tree(content)
+        content     = self._deep_clean_content(content)
+        all_paths   = self._extract_all_trees(content)
 
-        if not paths:
+        if not all_paths:
             raise ParsingError("No valid structure found in content")
 
-        structure = self._build_structure(paths)
+        structure = self._build_unified_structure(all_paths)
 
         if not structure:
             raise ParsingError("Unable to build structure from paths")
 
         return structure
 
-    def _extract_from_tree(self, content: str) -> List[Tuple[str, bool]]:
+    def _deep_clean_content(self, content: str) -> str:
         """
-        Extract paths from tree structure with proper hierarchy
+        Deep clean content - remove shell errors, normalize encoding, fix alignment
         """
-        paths           = []
-        lines           = content.split('\n')
-        stack           = []
-        indent_map      = {}
-
-        for line in lines:
+        lines = []
+        
+        for line in content.split('\n'):
             if not line.strip():
+                lines.append('')
                 continue
 
-            original_line       = line
-            tree_chars          = re.match(r'^([\s│├└─┬┴┼┤┌┐╭╮╰╯]+)', line)
-            if tree_chars:
-                tree_prefix     = tree_chars.group(1)
-                clean           = line[len(tree_prefix):].strip()
-                indent          = len(tree_prefix.replace('│', ' ').replace('├', ' ').replace('└', ' ').replace('─', ''))
-            else:
-                clean           = line.strip()
-                indent          = len(line) - len(line.lstrip())
-
-            if '#' in clean:
-                clean = clean.split('#')[0].strip()
-
-            if not clean or len(clean) > 200:
+            if self._is_shell_error_or_command(line):
                 continue
 
-            if clean.startswith('//'):
-                continue
+            cleaned = ''
+            for char in line:
+                if char.isprintable() or char in '\t ':
+                    cleaned += char
+                elif char in self.TREE_CHARS:
+                    cleaned += char
 
-            is_dir  = clean.endswith('/')
-            name    = clean.rstrip('/')
+            cleaned = cleaned.replace('\t', '    ')
+            cleaned = cleaned.rstrip()
 
-            if any(char in name for char in ['<', '>', '|', '*', '?', '"', ',']):
-                continue
+            if cleaned.strip():
+                lines.append(cleaned)
 
-            if indent not in indent_map:
-                indent_map[indent] = len(indent_map)
-            level = indent_map[indent]
+        return '\n'.join(lines)
 
-            if level >= len(stack):
-                stack.append(name)
-            elif level < len(stack):
-                stack = stack[:level]
-                stack.append(name)
-            else:
-                stack[level] = name
-
-            path = '/'.join(stack)
-            if path and (path, is_dir) not in paths:
-                paths.append((path, is_dir))
-
-        return paths
-
-    def _is_likely_file(self, name: str) -> bool:
+    def _is_shell_error_or_command(self, line: str) -> bool:
         """
-        Determine if a name is likely a file
+        Detect shell errors, command outputs, and invalid lines
         """
-        if '.' in name:
+        stripped = line.strip()
+
+        if not stripped:
+            return False
+
+        error_patterns = [
+            'command not found',
+            ': not found',
+            'No such file',
+            'syntax error',
+            'permission denied',
+            'cannot access',
+            'bash:',
+            'zsh:',
+            'sh:',
+            'fish:',
+        ]
+        
+        for pattern in error_patterns:
+            if pattern.lower() in stripped.lower():
+                return True
+
+        if re.match(r'^[│├└─┬┴┼┤┌┐╭╮╰╯|+\-`\s]+:\s*$', stripped):
             return True
 
-        if name.upper() in [f.upper() for f in self.EXTENSIONLESS_FILES]:
+        if re.search(r'\^[A-Z]', stripped):
             return True
 
-        if name.startswith('.'):
-            return True
-
-        if name.endswith('.sh') or name.endswith('.bat'):
+        if '\x1b[' in line or '\033[' in line:
             return True
 
         return False
 
-    def _build_structure(self, paths: List[Tuple[str, bool]]) -> List[Dict]:
+    def _extract_all_trees(self, content: str) -> List[Tuple[str, bool]]:
         """
-        Build structure from paths
+        Extract paths from content - handles multiple tree structures
         """
-        structure = []
+        all_paths               = []
+        lines                   = content.split('\n')
+        current_tree_stack      = []
+        last_indent             = -1
+        current_root            = None
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            i += 1
+
+            if not line.strip():
+                continue
+
+            result = self._smart_parse_line(line)
+
+            if result is None:
+                continue
+
+            name, indent, is_dir, has_tree_chars = result
+
+            if indent == 0 and not has_tree_chars:
+                if current_tree_stack:
+                    current_tree_stack = []
+
+                current_root            = name
+                current_tree_stack      = [name]
+                last_indent             = 0
+
+                all_paths.append((name, True))
+                continue
+
+            if current_root is None:
+                current_root            = name
+                current_tree_stack      = [name]
+                last_indent             = 0
+                all_paths.append((name, True))
+                continue
+
+            if indent > last_indent:
+                current_tree_stack.append(name)
+            elif indent == last_indent:
+                if current_tree_stack:
+                    current_tree_stack[-1] = name
+                else:
+                    current_tree_stack.append(name)
+            else:
+                levels_up = self._smart_calculate_levels(last_indent, indent)
+
+                if levels_up >= len(current_tree_stack):
+                    current_tree_stack = [name]
+                else:
+                    current_tree_stack = current_tree_stack[:-levels_up]
+                    current_tree_stack.append(name)
+
+            if current_tree_stack:
+                path = '/'.join(current_tree_stack)
+
+                if len(current_tree_stack) > self.MAX_DEPTH:
+                    self.warnings.append(f"Path too deep (>{self.MAX_DEPTH}): {path} - skipped")
+                    continue
+
+                if len(path) > self.MAX_PATH_LENGTH:
+                    self.warnings.append(f"Path too long (>{self.MAX_PATH_LENGTH}): {path} - skipped")
+                    continue
+
+                if (path, is_dir) not in all_paths:
+                    all_paths.append((path, is_dir))
+
+            last_indent = indent
+
+        return all_paths
+
+    def _smart_parse_line(self, line: str) -> Optional[Tuple[str, int, bool, bool]]:
+        """
+        Intelligently parse a line - handles various formats and misalignments
+        Returns: (name, indent, is_dir, has_tree_chars)
+        """
+        original = line
+
+        if not line.strip():
+            return None
+
+        tree_prefix, content, indent, has_tree_chars = self._extract_tree_components(line)
+
+        if content is None:
+            return None
+
+        content = content.strip()
+
+        if '#' in content and not content.startswith('#'):
+            content = content.split('#')[0].strip()
+
+        is_dir  = content.endswith('/')
+        name    = content.rstrip('/')
+
+        if not self._is_valid_name(name):
+            return None
+
+        if len(name) > self.MAX_FILENAME_LENGTH:
+            self.warnings.append(f"Filename too long: {name[:50]}... - skipped")
+            return None
+
+        if not is_dir and not self._is_likely_file(name):
+            is_dir = True
+
+        return name, indent, is_dir, has_tree_chars
+
+    def _extract_tree_components(self, line: str) -> Tuple[str, Optional[str], int, bool]:
+        """
+        Extract tree drawing characters, content, and calculate indent level
+        Handles misaligned characters and various formats
+        Returns: (tree_prefix, content, indent, has_tree_chars)
+        """
+        if not line:
+            return '', None, 0, False
+
+        leading_spaces      = len(line) - len(line.lstrip(' \t'))
+        stripped            = line.lstrip(' \t')
+        tree_char_end       = 0
+        has_tree_chars      = False
+
+        for i, char in enumerate(stripped):
+            if char in self.TREE_CHARS:
+                has_tree_chars      = True
+                tree_char_end       = i + 1
+            elif char in ' \t' and has_tree_chars:
+                tree_char_end = i + 1
+            else:
+                break
+
+        tree_prefix     = stripped[:tree_char_end]
+        content         = stripped[tree_char_end:].strip()
+        indent          = 0
+
+        if has_tree_chars:
+            indent_score = 0
+            indent_score += leading_spaces // 4
+            indent_score += tree_prefix.count('│')
+            indent_score += tree_prefix.count('|')
+            indent = max(1, indent_score) * 4
+        else:
+            indent = 0
+
+        return tree_prefix, content, indent, has_tree_chars
+
+    def _smart_calculate_levels(self, last_indent: int, current_indent: int) -> int:
+        """
+        Calculate level difference with flexibility for misalignment
+        """
+        if current_indent >= last_indent:
+            return 0
+
+        indent_diff = last_indent - current_indent
+        
+        if indent_diff < 3:
+            return 1
+        elif indent_diff < 7:
+            return 2
+        elif indent_diff < 11:
+            return 3
+        else:
+            return max(1, (indent_diff + 2) // 4)
+
+    def _is_valid_name(self, name: str) -> bool:
+        """
+        Validate name - flexible but safe
+        """
+        if not name or not name.strip():
+            return False
+
+        name = name.strip()
+
+        if any(char in name for char in self.INVALID_PATH_CHARS):
+            return False
+
+        if name in {'.', '..'}:
+            return False
+
+        reserved_pattern = r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)'
+        if re.match(reserved_pattern, name, re.IGNORECASE):
+            return False
+
+        if name.count(' ') > 5:
+            return False
+
+        if not re.search(r'[a-zA-Z0-9_]', name):
+            return False
+
+        return True
+
+    def _is_likely_file(self, name: str) -> bool:
+        """
+        Determine if name is likely a file vs directory
+        """
+        if '.' in name and not name.startswith('.'):
+            parts = name.rsplit('.', 1)
+            if len(parts) == 2 and 1 <= len(parts[1]) <= 5 and parts[1].replace('_', '').isalnum():
+                return True
+
+        if name.upper() in [f.upper() for f in self.EXTENSIONLESS_FILES]:
+            return True
+
+        if name.startswith('.') and len(name) > 1:
+            return True
+
+        if name.endswith(('.sh', '.bat', '.cmd', '.ps1', '.py', '.js', '.rb')):
+            return True
+
+        return False
+
+    def _build_unified_structure(self, paths: List[Tuple[str, bool]]) -> List[Dict]:
+        """
+        Build structure from all extracted paths
+        """
+        structure   = []
+        all_dirs    = set()
+        for path, is_dir in paths:
+            if is_dir:
+                all_dirs.add(path)
+            parts = path.split('/')
+            for i in range(1, len(parts)):
+                parent = '/'.join(parts[:i])
+                all_dirs.add(parent)
 
         for path, is_dir in paths:
             if path in self.seen_files or path in self.seen_dirs:
@@ -148,16 +380,15 @@ class StructureParser:
 
             parts = path.split('/')
 
-            if len(parts) > 1:
-                for i in range(len(parts) - 1):
-                    dir_path = '/'.join(parts[:i+1])
-                    if dir_path not in self.seen_dirs:
-                        self.seen_dirs.add(dir_path)
-                        structure.append({
-                            'type': 'directory',
-                            'path': dir_path,
-                            'name': parts[i]
-                        })
+            for i in range(1, len(parts)):
+                dir_path = '/'.join(parts[:i])
+                if dir_path not in self.seen_dirs:
+                    self.seen_dirs.add(dir_path)
+                    structure.append({
+                        'type': 'directory',
+                        'path': dir_path,
+                        'name': parts[i-1]
+                    })
 
             if is_dir:
                 if path not in self.seen_dirs:
@@ -170,24 +401,20 @@ class StructureParser:
             else:
                 if path not in self.seen_files:
                     self.seen_files.add(path)
-                    file_name = parts[-1]
-                    directory = '/'.join(parts[:-1]) if len(parts) > 1 else '.'
                     structure.append({
                         'type': 'file',
                         'path': path,
-                        'name': file_name,
-                        'directory': directory,
+                        'name': parts[-1],
+                        'directory': '/'.join(parts[:-1]) if len(parts) > 1 else '.',
                         'content': '',
-                        'extension': self._get_extension(file_name)
+                        'extension': self._get_extension(parts[-1])
                     })
 
         return structure
 
     @staticmethod
     def _get_extension(file_name: str) -> str:
-        """
-        Extract file extension
-        """
+        """Extract file extension"""
         if file_name.startswith('.'):
             if file_name.count('.') > 1:
                 return file_name[1:]
@@ -198,16 +425,23 @@ class StructureParser:
 
         return ''
 
+    def get_warnings(self) -> List[str]:
+        """Get all parsing warnings"""
+        return self.warnings
 
-def parse_raw_structure(content: str) -> List[Dict]:
+def parse_raw_structure(content: str) -> Tuple[List[Dict], List[str]]:
     """
     Convenience function to parse raw structure
+
+    Returns:
+        Tuple of (structure, warnings)
     """
-    parser = StructureParser()
-    return parser.parse(content)
+    parser      = StructureParser()
+    structure   = parser.parse(content)
+    return structure, parser.get_warnings()
 
 
-def print_tree_structure(structure: List[Dict], prefix: str = "", is_last: bool = True) -> None:
+def print_tree_structure(structure: List[Dict]) -> None:
     """
     Print structure in tree format
     """
@@ -219,7 +453,9 @@ def print_tree_structure(structure: List[Dict], prefix: str = "", is_last: bool 
                 tree[parent] = {'dirs': [], 'files': []}
             tree[parent]['dirs'].append(item)
         else:
-            parent = item['directory'] if item['directory'] != '.' else ''
+            parent = item.get('directory', '.')
+            if parent == '.':
+                parent = ''
             if parent not in tree:
                 tree[parent] = {'dirs': [], 'files': []}
             tree[parent]['files'].append(item)
@@ -230,12 +466,12 @@ def print_tree_structure(structure: List[Dict], prefix: str = "", is_last: bool 
 
         items = tree[path]['dirs'] + tree[path]['files']
         for i, item in enumerate(items):
-            is_last_item    = (i == len(items) - 1)
-            connector       = "└── " if is_last_item else "├── "
+            is_last         = (i == len(items) - 1)
+            connector       = "└── " if is_last else "├── "
 
             if item['type'] == 'directory':
                 print(f"{prefix}{connector}{item['name']}/")
-                extension = "    " if is_last_item else "│   "
+                extension = "    " if is_last else "│   "
                 print_level(item['path'], prefix + extension)
             else:
                 print(f"{prefix}{connector}{item['name']}")
