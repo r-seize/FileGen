@@ -103,9 +103,6 @@ filegen --raw structure.txt
 ```bash
 sudo dpkg -r python3-filegen
 sudo apt-get autoremove
-sudo rm -rf /usr/share/doc/python3-filegen
-sudo rm -rf /usr/local/bin/filegen
-sudo rm -rf /usr/lib/python3/dist-packages/filegen*
 ```
 
 - If installed via `pipx`:
